@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 import { applyNodeChanges } from 'reactflow'
-import { parseMongoSchemaInput } from '../lib/schemaParser'
+import { layoutCollections, parseMongoSchemaInput } from '../lib/schemaParser'
 import type { CollectionNode, DiagramEdge, ParsedCollection } from '../types'
 import type { NodeChange } from 'reactflow'
 
-const LOCAL_STORAGE_KEY = 'mongo-schema-studio:source'
+const LOCAL_STORAGE_KEY = 'mongo-schema-studio:workspace'
 
 export const starterSchema = JSON.stringify(
   [
@@ -73,21 +73,82 @@ type SchemaState = {
   error: string | null
   setSource: (source: string) => void
   updateNodes: (changes: NodeChange[]) => void
+  autoArrange: () => void
+}
+
+type PersistedWorkspace = {
+  source: string
+  lastValidSource: string
+  nodePositions: Record<string, { x: number; y: number }>
+}
+
+function loadPersistedWorkspace(): PersistedWorkspace {
+  if (typeof window === 'undefined') {
+    return {
+      source: starterSchema,
+      lastValidSource: starterSchema,
+      nodePositions: {},
+    }
+  }
+
+  const rawValue = window.localStorage.getItem(LOCAL_STORAGE_KEY)
+
+  if (!rawValue) {
+    return {
+      source: starterSchema,
+      lastValidSource: starterSchema,
+      nodePositions: {},
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<PersistedWorkspace>
+
+    return {
+      source: parsed.source ?? starterSchema,
+      lastValidSource: parsed.lastValidSource ?? starterSchema,
+      nodePositions: parsed.nodePositions ?? {},
+    }
+  } catch {
+    return {
+      source: starterSchema,
+      lastValidSource: starterSchema,
+      nodePositions: {},
+    }
+  }
+}
+
+function savePersistedWorkspace(payload: PersistedWorkspace) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload))
+}
+
+function applyStoredPositions(
+  nodes: CollectionNode[],
+  nodePositions: Record<string, { x: number; y: number }>,
+): CollectionNode[] {
+  return nodes.map((node) => ({
+    ...node,
+    position: nodePositions[node.id] ?? node.position,
+  }))
 }
 
 function getInitialState() {
-  const initialSource =
-    typeof window !== 'undefined'
-      ? window.localStorage.getItem(LOCAL_STORAGE_KEY) ?? starterSchema
-      : starterSchema
-  const parsed = parseMongoSchemaInput(initialSource)
+  const persistedWorkspace = loadPersistedWorkspace()
+  const safeSource = persistedWorkspace.lastValidSource || starterSchema
+  const parsed = parseMongoSchemaInput(safeSource)
+  const restoredNodes = applyStoredPositions(parsed.nodes, persistedWorkspace.nodePositions)
+  const hasInvalidSource = persistedWorkspace.source !== safeSource
 
   return {
-    source: initialSource,
+    source: persistedWorkspace.source,
     collections: parsed.collections,
-    nodes: parsed.nodes,
+    nodes: restoredNodes,
     edges: parsed.edges,
-    error: null,
+    error: hasInvalidSource ? 'Invalid JSON input.' : null,
   }
 }
 
@@ -115,24 +176,35 @@ export const useSchemaStore = create<SchemaState>((set) => ({
   ...getInitialState(),
   setSource: (source) => {
     set((state) => {
+      const nodePositions = Object.fromEntries(
+        state.nodes.map((node) => [node.id, node.position]),
+      )
+
       try {
         const parsed = parseMongoSchemaInput(source)
+        const nextNodes = mergeNodePositions(parsed.nodes, state.nodes)
 
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(LOCAL_STORAGE_KEY, source)
-        }
+        savePersistedWorkspace({
+          source,
+          lastValidSource: source,
+          nodePositions: Object.fromEntries(
+            nextNodes.map((node) => [node.id, node.position]),
+          ),
+        })
 
         return {
           source,
           collections: parsed.collections,
-          nodes: mergeNodePositions(parsed.nodes, state.nodes),
+          nodes: nextNodes,
           edges: parsed.edges,
           error: null,
         }
       } catch (error) {
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(LOCAL_STORAGE_KEY, source)
-        }
+        savePersistedWorkspace({
+          source,
+          lastValidSource: state.error ? loadPersistedWorkspace().lastValidSource : state.source,
+          nodePositions,
+        })
 
         return {
           ...state,
@@ -143,8 +215,40 @@ export const useSchemaStore = create<SchemaState>((set) => ({
     })
   },
   updateNodes: (changes) => {
-    set((state) => ({
-      nodes: applyNodeChanges(changes, state.nodes) as CollectionNode[],
-    }))
+    set((state) => {
+      const nextNodes = applyNodeChanges(changes, state.nodes) as CollectionNode[]
+      const persistedWorkspace = loadPersistedWorkspace()
+
+      savePersistedWorkspace({
+        source: state.source,
+        lastValidSource: persistedWorkspace.lastValidSource,
+        nodePositions: Object.fromEntries(
+          nextNodes.map((node) => [node.id, node.position]),
+        ),
+      })
+
+      return {
+        nodes: nextNodes,
+      }
+    })
+  },
+  autoArrange: () => {
+    set((state) => {
+      const laidOut = layoutCollections(state.collections)
+      const persistedWorkspace = loadPersistedWorkspace()
+
+      savePersistedWorkspace({
+        source: state.source,
+        lastValidSource: persistedWorkspace.lastValidSource,
+        nodePositions: Object.fromEntries(
+          laidOut.nodes.map((node) => [node.id, node.position]),
+        ),
+      })
+
+      return {
+        nodes: laidOut.nodes,
+        edges: laidOut.edges,
+      }
+    })
   },
 }))

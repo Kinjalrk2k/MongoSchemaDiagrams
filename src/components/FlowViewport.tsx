@@ -1,4 +1,4 @@
-import { Maximize, ZoomIn, ZoomOut } from 'lucide-react'
+import { LayoutGrid, Maximize, ZoomIn, ZoomOut } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
   Background,
@@ -10,6 +10,7 @@ import {
 } from 'reactflow'
 import type { useSchemaStore } from '../store/useSchemaStore'
 import { CollectionNode } from './CollectionNode'
+import { Tooltip } from './Tooltip'
 
 const nodeTypes = {
   collection: CollectionNode,
@@ -20,6 +21,7 @@ type FlowViewportProps = {
   edges: Edge[]
   updateNodes: ReturnType<typeof useSchemaStore.getState>['updateNodes']
   setSelectedEdgeId: (edgeId: string | null) => void
+  autoArrange: () => void
 }
 
 export function FlowViewport({
@@ -27,6 +29,7 @@ export function FlowViewport({
   edges,
   updateNodes,
   setSelectedEdgeId,
+  autoArrange,
 }: FlowViewportProps) {
   const { fitView, zoomIn, zoomOut } = useReactFlow()
   const [showMiniMap, setShowMiniMap] = useState(false)
@@ -58,7 +61,10 @@ export function FlowViewport({
   }
 
   const handleMove = (_: unknown, viewport: { x: number; y: number; zoom: number }) => {
-    if (previousZoomRef.current !== null && previousZoomRef.current !== viewport.zoom) {
+    const zoomChanged =
+      previousZoomRef.current !== null && previousZoomRef.current !== viewport.zoom
+
+    if (zoomChanged || previousZoomRef.current !== null) {
       showMiniMapTemporarily()
     }
 
@@ -133,6 +139,17 @@ export function FlowViewport({
             <Maximize className="h-4 w-4" />
           </ViewportButton>
           <ViewportButton
+            label="Auto-arrange diagram"
+            onClick={() => {
+              autoArrange()
+              window.setTimeout(() => {
+                void fitView({ duration: 260, padding: 0.18 })
+              }, 0)
+            }}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </ViewportButton>
+          <ViewportButton
             label="Zoom In"
             onClick={() => {
               void zoomIn({ duration: 160 })
@@ -158,14 +175,15 @@ function ViewportButton({
   onClick: () => void
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className="flex items-center justify-center border-r border-[#3a4049] px-4 py-2 text-xs font-medium text-slate-200 transition last:border-r-0 hover:bg-[#353b45]"
-    >
-      {children}
-    </button>
+    <Tooltip content={label} side="top">
+      <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        className="flex items-center justify-center border-r border-[#3a4049] px-4 py-2 text-xs font-medium text-slate-200 transition last:border-r-0 hover:bg-[#353b45]"
+      >
+        {children}
+      </button>
+    </Tooltip>
   )
 }

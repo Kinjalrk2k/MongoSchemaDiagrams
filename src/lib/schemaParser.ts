@@ -15,6 +15,7 @@ const VERTICAL_GAP = 240
 const NODE_WIDTH = 256
 const NODE_HEADER_HEIGHT = 36
 const NODE_ROW_HEIGHT = 31
+const NODE_SECTION_PADDING = 10
 
 function toArray<T>(value: T | T[] | undefined): T[] {
   if (!value) {
@@ -34,11 +35,21 @@ function normalizeType(property: MongoJsonSchemaProperty | undefined): string {
   return bsonType.join(' | ')
 }
 
-function inferReference(name: string, property: MongoJsonSchemaProperty): string | undefined {
-  const explicitRef = property.__ref ?? property.items?.__ref
+function normalizeRefs(value: string | string[] | undefined): string[] {
+  if (!value) {
+    return []
+  }
 
-  if (explicitRef) {
-    return explicitRef
+  return Array.isArray(value) ? value : [value]
+}
+
+function inferReferences(name: string, property: MongoJsonSchemaProperty): string[] {
+  const explicitRefs = normalizeRefs(property.__ref).concat(
+    normalizeRefs(property.items?.__ref),
+  )
+
+  if (explicitRefs.length > 0) {
+    return explicitRefs
   }
 
   const fieldType = normalizeType(property)
@@ -48,16 +59,16 @@ function inferReference(name: string, property: MongoJsonSchemaProperty): string
     (fieldType.includes('array') && itemType.includes('objectId'))
 
   if (!looksLikeObjectId) {
-    return undefined
+    return []
   }
 
   const normalizedName = name.replace(/Ids?$/i, '').replace(/_ids?$/i, '')
 
   if (!normalizedName || normalizedName === name) {
-    return undefined
+    return []
   }
 
-  return normalizedName.endsWith('s') ? normalizedName : `${normalizedName}s`
+  return [normalizedName.endsWith('s') ? normalizedName : `${normalizedName}s`]
 }
 
 function parseField(
@@ -68,7 +79,7 @@ function parseField(
 ): SchemaField {
   const type = normalizeType(property)
   const required = requiredFields.includes(name)
-  const ref = inferReference(name, property)
+  const refs = inferReferences(name, property)
   const path = parentPath ? `${parentPath}.${name}` : name
 
   if (type.includes('array')) {
@@ -82,8 +93,11 @@ function parseField(
       name,
       type: `${type}<${itemType}>`,
       required,
-      ref,
+      refs,
       path,
+      description: property.description,
+      defaultValue: property.default,
+      enumValues: property.enum,
       nestedFields,
     }
   }
@@ -93,8 +107,11 @@ function parseField(
       name,
       type,
       required,
-      ref,
+      refs,
       path,
+      description: property.description,
+      defaultValue: property.default,
+      enumValues: property.enum,
       nestedFields: parseFields(property, toArray(property.required), path),
     }
   }
@@ -103,8 +120,11 @@ function parseField(
     name,
     type,
     required,
-    ref,
+    refs,
     path,
+    description: property.description,
+    defaultValue: property.default,
+    enumValues: property.enum,
   }
 }
 
@@ -141,32 +161,53 @@ function parseCollection(document: MongoSchemaDocument): ParsedCollection {
   }
 }
 
-function buildNodes(collections: ParsedCollection[]): CollectionNode[] {
+function countVisibleRows(fields: SchemaField[]): number {
+  return fields.reduce((count, field) => {
+    const nestedCount = field.nestedFields?.length
+      ? 1 + countVisibleRows(field.nestedFields)
+      : 0
+
+    return count + 1 + nestedCount
+  }, 0)
+}
+
+export function buildNodes(collections: ParsedCollection[]): CollectionNode[] {
   const graph = new dagre.graphlib.Graph()
 
   graph.setDefaultEdgeLabel(() => ({}))
   graph.setGraph({
     rankdir: 'LR',
-    nodesep: 72,
-    ranksep: 120,
-    marginx: 24,
-    marginy: 24,
+    align: 'UL',
+    acyclicer: 'greedy',
+    ranker: 'network-simplex',
+    nodesep: 110,
+    edgesep: 60,
+    ranksep: 170,
+    marginx: 48,
+    marginy: 48,
   })
 
   for (const collection of collections) {
+    const rowCount = countVisibleRows(collection.fields)
+
     graph.setNode(collection.collection, {
       width: NODE_WIDTH,
-      height: NODE_HEADER_HEIGHT + collection.fields.length * NODE_ROW_HEIGHT,
+      height: NODE_HEADER_HEIGHT + rowCount * NODE_ROW_HEIGHT + NODE_SECTION_PADDING,
     })
   }
 
   for (const collection of collections) {
     for (const field of collection.fields) {
-      if (!field.ref) {
+      if (!field.refs || field.refs.length === 0) {
         continue
       }
 
-      graph.setEdge(collection.collection, field.ref)
+      for (const ref of field.refs) {
+        graph.setEdge(collection.collection, ref, {
+          weight: 2,
+          minlen: 1,
+        })
+      }
     }
   }
 
@@ -216,7 +257,7 @@ function findTargetFieldPath(collection: ParsedCollection): string {
   return collection.fields[0]?.path ?? '_id'
 }
 
-function buildEdges(collections: ParsedCollection[]): DiagramEdge[] {
+export function buildEdges(collections: ParsedCollection[]): DiagramEdge[] {
   const edges: DiagramEdge[] = []
   const collectionLookup = new Map(
     collections.map((collection) => [collection.collection, collection]),
@@ -224,29 +265,31 @@ function buildEdges(collections: ParsedCollection[]): DiagramEdge[] {
 
   for (const collection of collections) {
     for (const field of collection.fields) {
-      if (!field.ref) {
+      if (!field.refs || field.refs.length === 0) {
         continue
       }
 
-      const targetCollection = collectionLookup.get(field.ref)
-      const targetFieldPath = targetCollection
-        ? findTargetFieldPath(targetCollection)
-        : '_id'
+      for (const ref of field.refs) {
+        const targetCollection = collectionLookup.get(ref)
+        const targetFieldPath = targetCollection
+          ? findTargetFieldPath(targetCollection)
+          : '_id'
 
-      edges.push({
-        id: `${collection.collection}-${field.name}-${field.ref}`,
-        source: collection.collection,
-        target: field.ref,
-        sourceHandle: `source-${field.path}`,
-        targetHandle: `target-${targetFieldPath}`,
-        type: 'smoothstep',
-        data: {
-          sourceFieldKey: `${collection.collection}:${field.path}`,
-          targetFieldKey: `${field.ref}:${targetFieldPath}`,
-          sourceFieldPath: field.path,
-          targetFieldPath,
-        },
-      })
+        edges.push({
+          id: `${collection.collection}-${field.name}-${ref}`,
+          source: collection.collection,
+          target: ref,
+          sourceHandle: `source-${field.path}`,
+          targetHandle: `target-${targetFieldPath}`,
+          type: 'smoothstep',
+          data: {
+            sourceFieldKey: `${collection.collection}:${field.path}`,
+            targetFieldKey: `${ref}:${targetFieldPath}`,
+            sourceFieldPath: field.path,
+            targetFieldPath,
+          },
+        })
+      }
     }
   }
 
@@ -262,6 +305,14 @@ export function parseMongoSchemaInput(input: string): {
   const documents = Array.isArray(parsed) ? parsed : [parsed]
   const collections = documents.map(parseCollection)
 
+  return {
+    collections,
+    nodes: buildNodes(collections),
+    edges: buildEdges(collections),
+  }
+}
+
+export function layoutCollections(collections: ParsedCollection[]) {
   return {
     collections,
     nodes: buildNodes(collections),

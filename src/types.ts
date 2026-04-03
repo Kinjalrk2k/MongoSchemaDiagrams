@@ -4,8 +4,11 @@ export type SchemaField = {
   name: string
   type: string
   required: boolean
-  ref?: string
+  refs?: string[]
   path: string
+  description?: string
+  defaultValue?: unknown
+  enumValues?: unknown[]
   nestedFields?: SchemaField[]
 }
 
@@ -18,6 +21,8 @@ export type CollectionNodeData = {
   collection: string
   fields: SchemaField[]
   activeFieldKeys?: string[]
+  onFieldFocus?: (collection: string, fieldPath: string) => void
+  onCollectionFocus?: (collection: string) => void
 }
 
 export type CollectionNode = Node<CollectionNodeData, 'collection'>
@@ -50,5 +55,7 @@ export type MongoJsonSchema = {
 export type MongoJsonSchemaProperty = MongoJsonSchema & {
   description?: string
   items?: MongoJsonSchemaProperty
-  __ref?: string
+  __ref?: string | string[]
+  enum?: unknown[]
+  default?: unknown
 }

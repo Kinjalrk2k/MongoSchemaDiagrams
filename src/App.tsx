@@ -1,33 +1,140 @@
 import Editor from "@monaco-editor/react";
 import {
+  BrushCleaning,
+  CheckCircle2,
   CircleHelp,
   Download,
-  RotateCcw,
+  TriangleAlert,
   Upload,
-  BrushCleaning,
 } from "lucide-react";
 import { type ChangeEvent, useRef, useState } from "react";
 import { ReactFlowProvider, type Edge } from "reactflow";
 import "reactflow/dist/style.css";
 import { FlowViewport } from "./components/FlowViewport";
+import { DetailedHelpModal } from "./components/DetailedHelpModal";
 import { HelpSidebar } from "./components/HelpSidebar";
 import { IconButton } from "./components/IconButton";
+import { Tooltip } from "./components/Tooltip";
 import { EDITOR_MODEL_URI } from "./constants/editorSchema";
 import { useResizableSplit } from "./hooks/useResizableSplit";
-import { configureMonaco, handleEditorMount } from "./lib/editorConfig";
-import { starterSchema, useSchemaStore } from "./store/useSchemaStore";
+import {
+  configureMonaco,
+  handleEditorMount as mountMonacoEditor,
+} from "./lib/editorConfig";
+import { useSchemaStore } from "./store/useSchemaStore";
+
+function findCollectionLine(source: string, collection: string): number | null {
+  const lines = source.split("\n");
+
+  for (const [index, line] of lines.entries()) {
+    if (
+      line.includes(`"collection": "${collection}"`) ||
+      line.includes(`"name": "${collection}"`)
+    ) {
+      return index + 1;
+    }
+  }
+
+  return null;
+}
+
+function findFieldLine(
+  source: string,
+  collection: string,
+  fieldPath: string,
+): number | null {
+  const lines = source.split("\n");
+  const collectionLine = findCollectionLine(source, collection);
+
+  if (!collectionLine) {
+    return null;
+  }
+
+  let cursor = collectionLine - 1;
+
+  for (const segment of fieldPath.split(".")) {
+    let matchedLine: number | null = null;
+
+    for (let index = cursor; index < lines.length; index += 1) {
+      if (lines[index].includes(`"${segment}"`)) {
+        matchedLine = index + 1;
+        cursor = index + 1;
+        break;
+      }
+    }
+
+    if (!matchedLine) {
+      return null;
+    }
+  }
+
+  return cursor;
+}
 
 function Workspace() {
-  const { source, nodes, edges, error, collections, setSource, updateNodes } =
-    useSchemaStore();
+  const {
+    source,
+    nodes,
+    edges,
+    error,
+    collections,
+    setSource,
+    updateNodes,
+    autoArrange,
+  } = useSchemaStore();
   const [helpOpen, setHelpOpen] = useState(false);
+  const [detailedHelpOpen, setDetailedHelpOpen] = useState(false);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const editorRef = useRef<
+    import("monaco-editor").editor.IStandaloneCodeEditor | null
+  >(null);
+  const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
+  const decorationIdsRef = useRef<string[]>([]);
   const { editorWidth, containerRef, startResize } = useResizableSplit();
 
   const highlightedFieldPaths = selectedEdgeId
     ? edges.find((edge) => edge.id === selectedEdgeId)?.data
     : null;
+
+  const highlightEditorLine = (lineNumber: number) => {
+    if (!editorRef.current || !monacoRef.current) {
+      return;
+    }
+
+    decorationIdsRef.current = editorRef.current.deltaDecorations(
+      decorationIdsRef.current,
+      [
+        {
+          range: new monacoRef.current.Range(lineNumber, 1, lineNumber, 1),
+          options: {
+            isWholeLine: true,
+            className: "editor-line-highlight",
+          },
+        },
+      ],
+    );
+
+    editorRef.current.revealLineInCenter(lineNumber);
+    editorRef.current.setPosition({ lineNumber, column: 1 });
+    editorRef.current.focus();
+  };
+
+  const handleCollectionFocus = (collection: string) => {
+    const lineNumber = findCollectionLine(source, collection);
+
+    if (lineNumber) {
+      highlightEditorLine(lineNumber);
+    }
+  };
+
+  const handleFieldFocus = (collection: string, fieldPath: string) => {
+    const lineNumber = findFieldLine(source, collection, fieldPath);
+
+    if (lineNumber) {
+      highlightEditorLine(lineNumber);
+    }
+  };
 
   const renderedNodes = nodes.map((node) => ({
     ...node,
@@ -39,6 +146,8 @@ function Workspace() {
             highlightedFieldPaths.targetFieldKey,
           ]
         : [],
+      onFieldFocus: handleFieldFocus,
+      onCollectionFocus: handleCollectionFocus,
     },
   }));
 
@@ -126,16 +235,6 @@ function Workspace() {
             icon={<Download className="h-4 w-4" />}
           />
           <IconButton
-            label="Beautify schema"
-            onClick={handleBeautify}
-            icon={<BrushCleaning className="h-4 w-4" />}
-          />
-          <IconButton
-            label="Reset sample"
-            onClick={() => setSource(starterSchema)}
-            icon={<RotateCcw className="h-4 w-4" />}
-          />
-          <IconButton
             label={helpOpen ? "Close help" : "Open help"}
             onClick={() => setHelpOpen((value) => !value)}
             icon={<CircleHelp className="h-4 w-4" />}
@@ -158,36 +257,42 @@ function Workspace() {
             className="min-w-0 border-r border-[#343942] bg-[#1f1f1f]"
             style={{ width: `${editorWidth}%` }}
           >
-            <div className="h-full">
-              <Editor
-                height="100%"
-                defaultLanguage="json"
-                theme="mongoml-dark"
-                path={EDITOR_MODEL_URI}
-                value={source}
-                onChange={(value) => setSource(value ?? "")}
-                beforeMount={configureMonaco}
-                onMount={handleEditorMount}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  wordWrap: "on",
-                  lineNumbersMinChars: 3,
-                  padding: { top: 18, bottom: 18 },
-                  scrollBeyondLastLine: false,
-                  overviewRulerBorder: false,
-                  quickSuggestions: {
-                    other: true,
-                    comments: false,
-                    strings: true,
-                  },
-                  suggestOnTriggerCharacters: true,
-                  acceptSuggestionOnCommitCharacter: true,
-                  tabCompletion: "on",
-                  snippetSuggestions: "top",
-                  wordBasedSuggestions: "currentDocument",
-                }}
-              />
+            <div className="flex h-full flex-col">
+              <div className="min-h-0 flex-1">
+                <Editor
+                  height="100%"
+                  defaultLanguage="json"
+                  theme="mongoml-dark"
+                  path={EDITOR_MODEL_URI}
+                  value={source}
+                  onChange={(value) => setSource(value ?? "")}
+                  beforeMount={configureMonaco}
+                  onMount={(editorInstance, monaco) => {
+                    editorRef.current = editorInstance;
+                    monacoRef.current = monaco;
+                    mountMonacoEditor(editorInstance, monaco);
+                  }}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 14,
+                    wordWrap: "on",
+                    lineNumbersMinChars: 3,
+                    padding: { top: 18, bottom: 18 },
+                    scrollBeyondLastLine: false,
+                    overviewRulerBorder: false,
+                    quickSuggestions: {
+                      other: true,
+                      comments: false,
+                      strings: true,
+                    },
+                    suggestOnTriggerCharacters: true,
+                    acceptSuggestionOnCommitCharacter: true,
+                    tabCompletion: "on",
+                    snippetSuggestions: "top",
+                    wordBasedSuggestions: "currentDocument",
+                  }}
+                />
+              </div>
             </div>
           </div>
 
@@ -212,13 +317,22 @@ function Workspace() {
                 edges={renderedEdges}
                 updateNodes={updateNodes}
                 setSelectedEdgeId={setSelectedEdgeId}
+                autoArrange={autoArrange}
               />
             </div>
           </div>
         </div>
 
-        <HelpSidebar isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+        <HelpSidebar
+          isOpen={helpOpen}
+          onOpenDetailedHelp={() => setDetailedHelpOpen(true)}
+        />
       </section>
+
+      <DetailedHelpModal
+        isOpen={detailedHelpOpen}
+        onClose={() => setDetailedHelpOpen(false)}
+      />
 
       <footer
         className={`flex h-8 items-center justify-between border-t px-4 text-[11px] ${
@@ -228,14 +342,34 @@ function Workspace() {
         }`}
       >
         <div className="flex items-center gap-4 overflow-hidden">
-          <span className="truncate">
-            {error ? "Schema error" : "Schema valid"}
+          <Tooltip content="Beautify">
+            <button
+              type="button"
+              aria-label="Beautify"
+              onClick={handleBeautify}
+              className={`flex h-8 w-8 items-center justify-center border border-none text-slate-200 transition hover:bg-[#4a515b] `}
+            >
+              <BrushCleaning className="h-3.5 w-3.5" />
+            </button>
+          </Tooltip>
+
+          <span className="inline-flex items-center gap-1.5 truncate">
+            <span>Schema</span>
+            {error ? (
+              <TriangleAlert className="h-3.5 w-3.5 text-[#ffd3d6]" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
+            )}
           </span>
-          <span>{collections.length} collections</span>
-          <span>{edges.length} relationships</span>
+          <span>
+            <strong>{collections.length}</strong> collections
+          </span>
+          <span>
+            <strong>{edges.length}</strong> relationships
+          </span>
           {selectedEdgeId && <span>Relationship focused</span>}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <span>{error ?? "Live sync enabled"}</span>
         </div>
       </footer>

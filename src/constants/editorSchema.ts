@@ -59,6 +59,7 @@ export const MONGO_SCHEMA_JSON_SCHEMA = {
                 'decimal',
                 'bool',
                 'date',
+                'timestamp',
                 'null',
               ],
             },
@@ -77,6 +78,7 @@ export const MONGO_SCHEMA_JSON_SCHEMA = {
                   'decimal',
                   'bool',
                   'date',
+                  'timestamp',
                   'null',
                 ],
               },
@@ -116,6 +118,7 @@ export const MONGO_SCHEMA_JSON_SCHEMA = {
                 'decimal',
                 'bool',
                 'date',
+                'timestamp',
                 'null',
               ],
             },
@@ -134,18 +137,34 @@ export const MONGO_SCHEMA_JSON_SCHEMA = {
                   'decimal',
                   'bool',
                   'date',
+                  'timestamp',
                   'null',
                 ],
               },
             },
           ],
         },
+        enum: {
+          type: 'array',
+          items: {},
+        },
+        default: {},
         description: {
           type: 'string',
         },
         __ref: {
-          type: 'string',
-          description: 'Target collection for a relationship edge.',
+          oneOf: [
+            {
+              type: 'string',
+            },
+            {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+            },
+          ],
+          description: 'Target collection or collections for relationship edges.',
         },
         items: {
           $ref: '#/$defs/schemaProperty',
