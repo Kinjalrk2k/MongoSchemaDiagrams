@@ -38,6 +38,17 @@ export type MongoSchemaInput =
   | MongoSchemaDocument
   | MongoSchemaDocument[]
 
+export type NodePositionMap = Record<string, { x: number; y: number }>
+
+export type MongoMlWorkspaceDocument = {
+  format?: 'mongoml'
+  version?: 1
+  schema: MongoSchemaInput
+  layout?: {
+    nodePositions?: NodePositionMap
+  }
+}
+
 export type MongoSchemaDocument = {
   collection?: string
   name?: string

@@ -1,7 +1,15 @@
 import { create } from 'zustand'
 import { applyNodeChanges } from 'reactflow'
-import { layoutCollections, parseMongoSchemaInput } from '../lib/schemaParser'
-import type { CollectionNode, DiagramEdge, ParsedCollection } from '../types'
+import {
+  layoutCollections,
+  parseMongoSchemaInput,
+} from '../lib/schemaParser'
+import type {
+  CollectionNode,
+  DiagramEdge,
+  NodePositionMap,
+  ParsedCollection,
+} from '../types'
 import type { NodeChange } from 'reactflow'
 
 const LOCAL_STORAGE_KEY = 'mongo-schema-studio:workspace'
@@ -72,6 +80,7 @@ type SchemaState = {
   edges: DiagramEdge[]
   error: string | null
   setSource: (source: string) => void
+  importSource: (source: string, nodePositions?: NodePositionMap) => void
   updateNodes: (changes: NodeChange[]) => void
   autoArrange: () => void
 }
@@ -128,7 +137,7 @@ function savePersistedWorkspace(payload: PersistedWorkspace) {
 
 function applyStoredPositions(
   nodes: CollectionNode[],
-  nodePositions: Record<string, { x: number; y: number }>,
+  nodePositions: NodePositionMap,
 ): CollectionNode[] {
   return nodes.map((node) => ({
     ...node,
@@ -172,6 +181,18 @@ function mergeNodePositions(
   })
 }
 
+function saveWorkspaceFromState(
+  source: string,
+  lastValidSource: string,
+  nodes: CollectionNode[],
+) {
+  savePersistedWorkspace({
+    source,
+    lastValidSource,
+    nodePositions: Object.fromEntries(nodes.map((node) => [node.id, node.position])),
+  })
+}
+
 export const useSchemaStore = create<SchemaState>((set) => ({
   ...getInitialState(),
   setSource: (source) => {
@@ -184,13 +205,7 @@ export const useSchemaStore = create<SchemaState>((set) => ({
         const parsed = parseMongoSchemaInput(source)
         const nextNodes = mergeNodePositions(parsed.nodes, state.nodes)
 
-        savePersistedWorkspace({
-          source,
-          lastValidSource: source,
-          nodePositions: Object.fromEntries(
-            nextNodes.map((node) => [node.id, node.position]),
-          ),
-        })
+        saveWorkspaceFromState(source, source, nextNodes)
 
         return {
           source,
@@ -214,18 +229,28 @@ export const useSchemaStore = create<SchemaState>((set) => ({
       }
     })
   },
+  importSource: (source, nodePositions = {}) => {
+    set(() => {
+      const parsed = parseMongoSchemaInput(source)
+      const nextNodes = applyStoredPositions(parsed.nodes, nodePositions)
+
+      saveWorkspaceFromState(source, source, nextNodes)
+
+      return {
+        source,
+        collections: parsed.collections,
+        nodes: nextNodes,
+        edges: parsed.edges,
+        error: null,
+      }
+    })
+  },
   updateNodes: (changes) => {
     set((state) => {
       const nextNodes = applyNodeChanges(changes, state.nodes) as CollectionNode[]
       const persistedWorkspace = loadPersistedWorkspace()
 
-      savePersistedWorkspace({
-        source: state.source,
-        lastValidSource: persistedWorkspace.lastValidSource,
-        nodePositions: Object.fromEntries(
-          nextNodes.map((node) => [node.id, node.position]),
-        ),
-      })
+      saveWorkspaceFromState(state.source, persistedWorkspace.lastValidSource, nextNodes)
 
       return {
         nodes: nextNodes,
@@ -237,13 +262,7 @@ export const useSchemaStore = create<SchemaState>((set) => ({
       const laidOut = layoutCollections(state.collections)
       const persistedWorkspace = loadPersistedWorkspace()
 
-      savePersistedWorkspace({
-        source: state.source,
-        lastValidSource: persistedWorkspace.lastValidSource,
-        nodePositions: Object.fromEntries(
-          laidOut.nodes.map((node) => [node.id, node.position]),
-        ),
-      })
+      saveWorkspaceFromState(state.source, persistedWorkspace.lastValidSource, laidOut.nodes)
 
       return {
         nodes: laidOut.nodes,

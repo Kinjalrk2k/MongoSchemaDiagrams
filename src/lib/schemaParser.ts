@@ -4,8 +4,10 @@ import type {
   DiagramEdge,
   MongoJsonSchema,
   MongoJsonSchemaProperty,
+  MongoMlWorkspaceDocument,
   MongoSchemaDocument,
   MongoSchemaInput,
+  NodePositionMap,
   ParsedCollection,
   SchemaField,
 } from '../types'
@@ -301,8 +303,10 @@ export function parseMongoSchemaInput(input: string): {
   nodes: CollectionNode[]
   edges: DiagramEdge[]
 } {
-  const parsed = JSON.parse(input) as MongoSchemaInput
-  const documents = Array.isArray(parsed) ? parsed : [parsed]
+  const parsedDocument = parseMongoMlDocument(input)
+  const documents = Array.isArray(parsedDocument.schema)
+    ? parsedDocument.schema
+    : [parsedDocument.schema]
   const collections = documents.map(parseCollection)
 
   return {
@@ -318,4 +322,48 @@ export function layoutCollections(collections: ParsedCollection[]) {
     nodes: buildNodes(collections),
     edges: buildEdges(collections),
   }
+}
+
+export function parseMongoMlDocument(input: string): {
+  schema: MongoSchemaInput
+  nodePositions: NodePositionMap
+} {
+  const parsed = JSON.parse(input) as MongoSchemaInput | MongoMlWorkspaceDocument
+
+  if (
+    parsed &&
+    typeof parsed === 'object' &&
+    !Array.isArray(parsed) &&
+    'schema' in parsed
+  ) {
+    const workspace = parsed as MongoMlWorkspaceDocument
+
+    return {
+      schema: workspace.schema,
+      nodePositions: workspace.layout?.nodePositions ?? {},
+    }
+  }
+
+  return {
+    schema: parsed as MongoSchemaInput,
+    nodePositions: {},
+  }
+}
+
+export function serializeMongoMlDocument(
+  schema: MongoSchemaInput,
+  nodePositions: NodePositionMap,
+) {
+  return JSON.stringify(
+    {
+      format: 'mongoml',
+      version: 1,
+      schema,
+      layout: {
+        nodePositions,
+      },
+    } satisfies MongoMlWorkspaceDocument,
+    null,
+    2,
+  )
 }

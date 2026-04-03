@@ -21,6 +21,7 @@ import {
   configureMonaco,
   handleEditorMount as mountMonacoEditor,
 } from "./lib/editorConfig";
+import { parseMongoMlDocument, serializeMongoMlDocument } from "./lib/schemaParser";
 import { useSchemaStore } from "./store/useSchemaStore";
 
 function findCollectionLine(source: string, collection: string): number | null {
@@ -79,6 +80,7 @@ function Workspace() {
     error,
     collections,
     setSource,
+    importSource,
     updateNodes,
     autoArrange,
   } = useSchemaStore();
@@ -175,7 +177,16 @@ function Workspace() {
   });
 
   const handleExport = () => {
-    const blob = new Blob([source], { type: "application/json" });
+    const parsedDocument = parseMongoMlDocument(source);
+    const blob = new Blob(
+      [
+        serializeMongoMlDocument(
+          parsedDocument.schema,
+          Object.fromEntries(nodes.map((node) => [node.id, node.position])),
+        ),
+      ],
+      { type: "application/json" },
+    );
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
 
@@ -194,7 +205,11 @@ function Workspace() {
     }
 
     const content = await file.text();
-    setSource(content);
+    const parsedDocument = parseMongoMlDocument(content);
+    importSource(
+      JSON.stringify(parsedDocument.schema, null, 2),
+      parsedDocument.nodePositions,
+    );
     event.target.value = "";
   };
 
