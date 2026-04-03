@@ -1,6 +1,6 @@
-# Mongo Schema Studio
+# Mongo Schema Diagrams
 
-Mongo Schema Studio is a React + TypeScript web app for turning MongoDB-style JSON Schema into an interactive document-model diagram.
+Mongo Schema Diagrams is a React + TypeScript web app for turning MongoDB-style JSON Schema into an interactive document-model diagram.
 
 It is designed as a MongoDB-focused alternative to tools like dbdiagram-style schema visualizers, with support for:
 
@@ -72,7 +72,7 @@ MongoDB does not enforce relational foreign keys, so this app supports lightweig
 
 ## MongoML Format
 
-Mongo Schema Studio currently uses a JSON-based format informally referred to here as `MongoML`.
+Mongo Schema Diagrams currently uses a JSON-based format informally referred to here as `MongoML`.
 
 You can provide either:
 
