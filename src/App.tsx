@@ -2,7 +2,6 @@ import Editor from "@monaco-editor/react";
 import {
   CircleHelp,
   Download,
-  Rows3,
   RotateCcw,
   Upload,
   BrushCleaning,
