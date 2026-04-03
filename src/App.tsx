@@ -1,27 +1,34 @@
-import Editor from '@monaco-editor/react'
-import { CircleHelp, Download, RotateCcw, Upload } from 'lucide-react'
-import { type ChangeEvent, useRef, useState } from 'react'
-import { ReactFlowProvider, type Edge } from 'reactflow'
-import 'reactflow/dist/style.css'
-import { FlowViewport } from './components/FlowViewport'
-import { HelpSidebar } from './components/HelpSidebar'
-import { IconButton } from './components/IconButton'
-import { EDITOR_MODEL_URI } from './constants/editorSchema'
-import { useResizableSplit } from './hooks/useResizableSplit'
-import { configureMonaco, handleEditorMount } from './lib/editorConfig'
-import { starterSchema, useSchemaStore } from './store/useSchemaStore'
+import Editor from "@monaco-editor/react";
+import {
+  CircleHelp,
+  Download,
+  Rows3,
+  RotateCcw,
+  Upload,
+  BrushCleaning,
+} from "lucide-react";
+import { type ChangeEvent, useRef, useState } from "react";
+import { ReactFlowProvider, type Edge } from "reactflow";
+import "reactflow/dist/style.css";
+import { FlowViewport } from "./components/FlowViewport";
+import { HelpSidebar } from "./components/HelpSidebar";
+import { IconButton } from "./components/IconButton";
+import { EDITOR_MODEL_URI } from "./constants/editorSchema";
+import { useResizableSplit } from "./hooks/useResizableSplit";
+import { configureMonaco, handleEditorMount } from "./lib/editorConfig";
+import { starterSchema, useSchemaStore } from "./store/useSchemaStore";
 
 function Workspace() {
   const { source, nodes, edges, error, collections, setSource, updateNodes } =
-    useSchemaStore()
-  const [helpOpen, setHelpOpen] = useState(false)
-  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
-  const importInputRef = useRef<HTMLInputElement | null>(null)
-  const { editorWidth, containerRef, startResize } = useResizableSplit()
+    useSchemaStore();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const { editorWidth, containerRef, startResize } = useResizableSplit();
 
   const highlightedFieldPaths = selectedEdgeId
     ? edges.find((edge) => edge.id === selectedEdgeId)?.data
-    : null
+    : null;
 
   const renderedNodes = nodes.map((node) => ({
     ...node,
@@ -34,54 +41,63 @@ function Workspace() {
           ]
         : [],
     },
-  }))
+  }));
 
   const renderedEdges = edges.map((edge): Edge => {
-    const isSelected = edge.id === selectedEdgeId
-    const sourceNode = nodes.find((node) => node.id === edge.source)
-    const targetNode = nodes.find((node) => node.id === edge.target)
+    const isSelected = edge.id === selectedEdgeId;
+    const sourceNode = nodes.find((node) => node.id === edge.source);
+    const targetNode = nodes.find((node) => node.id === edge.target);
     const sourceOnLeft =
       sourceNode && targetNode
         ? sourceNode.position.x > targetNode.position.x
-        : false
+        : false;
 
     return {
       ...edge,
       animated: isSelected,
       label: undefined,
-      sourceHandle: `${sourceOnLeft ? 'source-left' : 'source-right'}-${edge.data?.sourceFieldPath}`,
-      targetHandle: `${sourceOnLeft ? 'target-right' : 'target-left'}-${edge.data?.targetFieldPath}`,
+      sourceHandle: `${sourceOnLeft ? "source-left" : "source-right"}-${edge.data?.sourceFieldPath}`,
+      targetHandle: `${sourceOnLeft ? "target-right" : "target-left"}-${edge.data?.targetFieldPath}`,
       style: {
-        stroke: isSelected ? '#67e8f9' : '#94a3b8',
+        stroke: isSelected ? "#67e8f9" : "#94a3b8",
         strokeWidth: isSelected ? 1.6 : 1.15,
       },
       zIndex: 0,
-    }
-  })
+    };
+  });
 
   const handleExport = () => {
-    const blob = new Blob([source], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
+    const blob = new Blob([source], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
 
-    link.href = url
-    link.download = 'schema.mongoml'
-    link.click()
+    link.href = url;
+    link.download = "schema.mongoml";
+    link.click();
 
-    URL.revokeObjectURL(url)
-  }
+    URL.revokeObjectURL(url);
+  };
 
   const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+    const file = event.target.files?.[0];
 
     if (!file) {
-      return
+      return;
     }
 
-    const content = await file.text()
-    setSource(content)
-    event.target.value = ''
-  }
+    const content = await file.text();
+    setSource(content);
+    event.target.value = "";
+  };
+
+  const handleBeautify = () => {
+    try {
+      const parsed = JSON.parse(source);
+      setSource(JSON.stringify(parsed, null, 2));
+    } catch {
+      // Keep current content unchanged when JSON is invalid.
+    }
+  };
 
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-[#2b2b2b] text-slate-100">
@@ -111,12 +127,17 @@ function Workspace() {
             icon={<Download className="h-4 w-4" />}
           />
           <IconButton
+            label="Beautify schema"
+            onClick={handleBeautify}
+            icon={<BrushCleaning className="h-4 w-4" />}
+          />
+          <IconButton
             label="Reset sample"
             onClick={() => setSource(starterSchema)}
             icon={<RotateCcw className="h-4 w-4" />}
           />
           <IconButton
-            label={helpOpen ? 'Close help' : 'Open help'}
+            label={helpOpen ? "Close help" : "Open help"}
             onClick={() => setHelpOpen((value) => !value)}
             icon={<CircleHelp className="h-4 w-4" />}
           />
@@ -127,7 +148,7 @@ function Workspace() {
           accept=".mongoml,.json,application/json,text/plain"
           className="hidden"
           onChange={(event) => {
-            void handleImport(event)
+            void handleImport(event);
           }}
         />
       </header>
@@ -145,13 +166,13 @@ function Workspace() {
                 theme="mongoml-dark"
                 path={EDITOR_MODEL_URI}
                 value={source}
-                onChange={(value) => setSource(value ?? '')}
+                onChange={(value) => setSource(value ?? "")}
                 beforeMount={configureMonaco}
                 onMount={handleEditorMount}
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,
-                  wordWrap: 'on',
+                  wordWrap: "on",
                   lineNumbersMinChars: 3,
                   padding: { top: 18, bottom: 18 },
                   scrollBeyondLastLine: false,
@@ -163,9 +184,9 @@ function Workspace() {
                   },
                   suggestOnTriggerCharacters: true,
                   acceptSuggestionOnCommitCharacter: true,
-                  tabCompletion: 'on',
-                  snippetSuggestions: 'top',
-                  wordBasedSuggestions: 'currentDocument',
+                  tabCompletion: "on",
+                  snippetSuggestions: "top",
+                  wordBasedSuggestions: "currentDocument",
                 }}
               />
             </div>
@@ -197,31 +218,30 @@ function Workspace() {
           </div>
         </div>
 
-        <HelpSidebar
-          isOpen={helpOpen}
-          onClose={() => setHelpOpen(false)}
-        />
+        <HelpSidebar isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
       </section>
 
       <footer
         className={`flex h-8 items-center justify-between border-t px-4 text-[11px] ${
           error
-            ? 'border-[#7b3035] bg-[#5b2329] text-[#ffd3d6]'
-            : 'border-[#343942] bg-[#1f232a] text-slate-400'
+            ? "border-[#7b3035] bg-[#5b2329] text-[#ffd3d6]"
+            : "border-[#343942] bg-[#1f232a] text-slate-400"
         }`}
       >
         <div className="flex items-center gap-4 overflow-hidden">
-          <span className="truncate">{error ? 'Schema error' : 'Schema valid'}</span>
+          <span className="truncate">
+            {error ? "Schema error" : "Schema valid"}
+          </span>
           <span>{collections.length} collections</span>
           <span>{edges.length} relationships</span>
           {selectedEdgeId && <span>Relationship focused</span>}
         </div>
         <div className="flex items-center gap-4">
-          <span>{error ?? 'Live sync enabled'}</span>
+          <span>{error ?? "Live sync enabled"}</span>
         </div>
       </footer>
     </main>
-  )
+  );
 }
 
 function App() {
@@ -229,7 +249,7 @@ function App() {
     <ReactFlowProvider>
       <Workspace />
     </ReactFlowProvider>
-  )
+  );
 }
 
-export default App
+export default App;
