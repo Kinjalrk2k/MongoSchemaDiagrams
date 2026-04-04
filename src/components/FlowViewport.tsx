@@ -1,4 +1,4 @@
-import { toPng, toSvg } from "html-to-image";
+import { toPng } from "html-to-image";
 import { Download, LayoutGrid, Maximize, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
